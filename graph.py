@@ -4,7 +4,6 @@ import pickle
 import numpy as np
 
 import agent
-import wgan
 
 
 with open(agent.picklepath, "rb") as f: 
