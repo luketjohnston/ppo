@@ -13,3 +13,8 @@ Below is a gif of the agent playing space invaders!
 And this is a graph of the unsmoothed training curves for 40M frames of training on space invaders:
 ![space invaders training curves](images/space_invaders_graph.png)
 
+
+This blog post was extremely helpful in implementing this:
+https://costa.sh/blog-the-32-implementation-details-of-ppo.html
+
+[1] [Proximal Policy Optimization Algorithms](https://arxiv.org/abs/1707.06347)
