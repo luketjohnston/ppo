@@ -6,10 +6,10 @@ and (any corresponding hyperparameters) and then run
 python ppo.py
 
 
-Below is a video of the agent playing space invaders!
+Below is a gif of the agent playing space invaders!
 
 ![one episode of space invaders](images/space_invaders_animation.gif)
 
-And this is a graph of the unsmoothed training curves the 40M frames of training space invaders:
+And this is a graph of the unsmoothed training curves for 40M frames of training on space invaders:
 ![space invaders training curves](images/space_invaders_graph.png)
 
