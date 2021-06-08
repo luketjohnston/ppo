@@ -21,7 +21,8 @@ DEBUG = True
 # env with MaxAndSkipEnv wrapper in agent.
 ENVIRONMENT = 'MontezumaRevenge-v0'
 ENVIRONMENT = 'PongNoFrameskip-v4'
-ENVIRONMENT = 'CartPole-v1'
+ENVIRONMENT = 'SpaceInvadersNoFrameskip-v4'
+#ENVIRONMENT = 'CartPole-v1'
 #ENVIRONMENT = 'Acrobot-v1'
 
 SQRT2 = 2.0**0.5

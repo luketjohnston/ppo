@@ -1,5 +1,7 @@
 import numpy as np
 
+''' TODO parallelize
+'''
 class VecEnv():
   def __init__(self, makeEnv, nenvs):
     self.envs = []

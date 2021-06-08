@@ -1,5 +1,7 @@
 import tensorflow as tf
+import argparse
 import multiprocessing as mp
+from datetime import datetime
 import matplotlib
 import timeit
 from tensorflow.keras.layers import Conv2D, Flatten, Dense
@@ -20,12 +22,6 @@ import agent
 from vecenv import VecEnv # not parallelized yet
 
 from atari_wrappers import WarpFrame, NoopResetEnv, EpisodicLifeEnv, ClipRewardEnv, FrameStack, ScaledFloatFrame, MaxAndSkipEnv, FireResetEnv
-
-if tf.config.list_physical_devices('GPU'):
-  # For some reason this is necessary to prevent error
-  physical_devices = tf.config.experimental.list_physical_devices('GPU')
-  tf.config.experimental.set_memory_growth(physical_devices[0], True)
-
 
 def makeEnv():
   env = gym.make(agent.ENVIRONMENT)
@@ -51,7 +47,7 @@ SAVE_CYCLES = 20
 ENVS = agent.ENVS
 ROLLOUT_LEN = agent.ROLLOUT_LEN
 MINIBATCH_SIZE = agent.MINIBATCH_SIZE
-MINIBATCHES = ENVS * ROLLOUT_LEN // MINIBATCH_SIZE # must be multiple of 
+MINIBATCHES = ENVS * ROLLOUT_LEN // MINIBATCH_SIZE 
 FRAMES_PER_CYCLE = ENVS * ROLLOUT_LEN
 EPOCHS = agent.EPOCHS
 WGAN_TRAINING_CYCLES = 1
@@ -66,7 +62,10 @@ given vecenv and actor,
 computes the generalized advantage estimate for a rollout of n steps.
 
 returns:
-[states, actions, dones, returns value_ests, act_log_probs], episode_rewards
+[states, rewards, actions, dones, act_probs], episode_rewards
+NOTE: states has length n+1 because it includes the final state (after the
+rollout is finished). This is used to compute the one-step TD-error for
+the last rollout step
 
 episode_rewards is a list of total reward for any episodes that terminated during
 the rollout.
@@ -94,7 +93,7 @@ def getRollout(vecenv, n, actor):
 
   return (states, rewards, actions, dones, act_probs), episode_scores
 
-''' given rollout = (states, rewards, actions, dones, act_log_probs)
+''' given rollout = (states, rewards, actions, dones, act_probs)
 as returned by getRollout, n = length of rollout, and actor, 
 returns the GAE adv estimates and returns,
 as well as the rest of the inputs needed for the batch of training
@@ -102,9 +101,7 @@ as well as the rest of the inputs needed for the batch of training
 def getGAE(rollout, n, actor):
 
   (states, rewards, actions, dones, act_probs) = rollout
-  #states = np.reshape(states, (states.shape[0] * states.shape[1],) + states.shape[2:])
   value_ests = tf.map_fn(actor.value, states)
-  #value_ests = np.reshape(value_ests, (-1, n) + value_ests.shape[1:])
 
   advs = np.zeros((n,vecenv.nenvs))
 
@@ -117,7 +114,7 @@ def getGAE(rollout, n, actor):
     advs[t] = delta + agent.LAMBDA * agent.DISCOUNT * next_adv * nonterminal 
     next_adv = advs[t]
 
-  states = states[:-1,...]          # toss last state and value estimage
+  states = states[:-1,...]          # toss last state and value estimate
   value_ests = value_ests[:-1,...]  
 
   returns = advs + value_ests
@@ -133,17 +130,45 @@ def getGAE(rollout, n, actor):
 
 if __name__ == '__main__':
 
-  with open(agent.picklepath, "rb") as f: 
-    agentsave = pickle.load(f)
-    for x in ['loss_policy', 'loss_value', 'loss_entropy', 'episode_rewards']:
-      if not x in agentsave:
-        agentsave[x] = []
-  
-  
-  if (LOAD_SAVE):
-    actor = tf.saved_model.load(agent.model_savepath)
+
+  parser = argparse.ArgumentParser(description="Train ppo!")
+  parser.add_argument('--load_model', dest="load_model", default='', type=str, help="path to model to load")
+  parser.add_argument('--savepath', dest="savepath", default='', type=str, help="path where model will be saved")
+  args = parser.parse_args()
+
+  if args.savepath:
+    savepath = args.savepath
+  elif args.load_model:
+    savepath = args.load_model
   else:
-    actor = agent.Agent()
+    dir_path = os.path.dirname(os.path.realpath(__file__))
+    savedir_path = os.path.join(dir_path, 'saves')
+    savepath = os.path.join(savedir_path, agent.ENVIRONMENT + str(datetime.now()))
+  picklepath = os.path.join(savepath, 'save.pickle')
+  
+  # load model if specified, otherwise create model
+  if (args.load_model):
+    actor = tf.saved_model.load(savepath)
+  else:
+    actor = agent.Agent();
+    tf.saved_model.save(actor, savepath)
+    save = {}
+    with open(picklepath, "wb") as fp:
+      pickle.dump(save, fp)
+
+  with open(picklepath, "rb") as f: 
+    save = pickle.load(f)
+    defaults = {
+      'loss_policy': [], 
+      'loss_value': [], 
+      'loss_entropy': [],
+      'episode_rewards': [],
+      'framecount': 0,
+      'ppo_iters': 0,
+    }
+    for s,v in defaults.items():
+      if not s in save:
+        save[s] = v
 
   vecenv = VecEnv(makeEnv, ENVS)
   
@@ -159,12 +184,12 @@ if __name__ == '__main__':
     rollout, episode_rewards = getRollout(vecenv, ROLLOUT_LEN, actor)
     #[states, rewards, actions, dones, act_log_probs] = rollout
 
-    agentsave['episode_rewards'] += episode_rewards
+    save['episode_rewards'] += episode_rewards
 
-    if len(agentsave['episode_rewards']) > 0:
-      av_ep_rew = sum(agentsave['episode_rewards'][-20:]) / len(agentsave['episode_rewards'][-20:])
+    if len(save['episode_rewards']) > 0:
+      av_ep_rew = sum(save['episode_rewards'][-20:]) / len(save['episode_rewards'][-20:])
       print('Average episode reward: ' + str(av_ep_rew))
-      print('Episode count: ' + str(len(agentsave['episode_rewards'])))
+      print('Episode count: ' + str(len(save['episode_rewards'])))
     
 
     print("Frames: %d" % ((cycle + 1) * ROLLOUT_LEN * ENVS))
@@ -189,9 +214,9 @@ if __name__ == '__main__':
 
         loss_str = ''.join('{:6f}, '.format(lossv) for lossv in loss_pve)
   
-        agentsave['loss_policy'] += [loss_pve[0].numpy()]
-        agentsave['loss_value'] += [loss_pve[1].numpy()]
-        agentsave['loss_entropy'] += [loss_pve[2].numpy()]
+        save['loss_policy'] += [loss_pve[0].numpy()]
+        save['loss_value'] += [loss_pve[1].numpy()]
+        save['loss_entropy'] += [loss_pve[2].numpy()]
         
     print(loss_str)
   
@@ -199,12 +224,9 @@ if __name__ == '__main__':
     cycle += 1
     if not cycle % SAVE_CYCLES:
       print('Saving model...')
-      tf.saved_model.save(actor, agent.model_savepath)
-      tf.saved_model.save(actor, agent.backup_savepath)
-      with open(agent.picklepath, "wb") as fp:
-        pickle.dump(agentsave, fp)
-      with open(agent.picklepath_backup, "wb") as fp:
-        pickle.dump(agentsave, fp)
+      tf.saved_model.save(actor, savepath)
+      with open(picklepath, "wb") as fp:
+        pickle.dump(save, fp)
   
     
   
